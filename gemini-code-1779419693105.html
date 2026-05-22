@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>웹 횡스크롤 RPG 기초</title>
+    <style>
+        body { background-color: #222; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; color: white; }
+        canvas { background: #334555; border: 4px solid #fff; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        .ui { margin-bottom: 10px; font-size: 18px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="ui">
+    <span>레벨: <span id="lvl">1</span></span> | 
+    <span>경험치: <span id="exp">0</span>/100</span> | 
+    <span>골드: <span id="gold">0</span>G</span>
+</div>
+<canvas id="gameCanvas" width="800" height="400"></canvas>
+<p style="color: #aaa;">[A, D]: 이동 | [Space]: 점프 | [K]: 공격</p>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// 게임 설정값
+const GRAVITY = 0.5; // 중력 수치
+const GROUND_Y = 320; // 땅의 Y 축 높이
+
+// 키보드 입력 상태 저장 객체
+const keys = {};
+
+// 1. 플레이어 클래스
+class Player {
+    constructor() {
+        this.x = 100;
+        this.y = 200;
+        this.width = 40;
+        this.height = 60;
+        this.vx = 0; // X축 속도
+        this.vy = 0; // Y축 속도
+        this.speed = 4;
+        this.jumpPower = -12;
+        this.isGrounded = false;
+        this.isAttacking = false;
+        this.attackCooldown = 0;
+        
+        // RPG 스탯
+        this.level = 1;
+        this.exp = 0;
+        this.gold = 0;
+    }
+
+    update() {
+        // 좌우 이동 조작
+        if (keys['KeyA'] || keys['ArrowLeft']) this.vx = -this.speed;
+        else if (keys['KeyD'] || keys['ArrowRight']) this.vx = this.speed;
+        else this.vx = 0;
+
+        // 점프 조작
+        if ((keys['Space'] || keys['ArrowUp']) && this.isGrounded) {
+            this.vy = this.jumpPower;
+            this.isGrounded = false;
+        }
+
+        // 공격 조작 (K키)
+        if (keys['KeyK'] && this.attackCooldown === 0) {
+            this.isAttacking = true;
+            this.attackCooldown = 20; // 20프레임 동안 공격 판정 및 쿨타임
+        }
+
+        if (this.attackCooldown > 0) {
+            this.attackCooldown--;
+            if (this.attackCooldown < 10) this.isAttacking = false; // 공격 모션 중반 이후 판정 제거
+        }
+
+        // 중력 적용 및 이동
+        this.vy += GRAVITY;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // 땅 착지 검사
+        if (this.y + this.height >= GROUND_Y) {
+            this.y = GROUND_Y - this.height;
+            this.vy = 0;
+            this.isGrounded = true;
+        }
+
+        // 화면 밖 이탈 방지
+        if (this.x < 0) this.x = 0;
+        if (this.x + this.width > canvas.width) this.x = canvas.width - this.width;
+    }
+
+    draw() {
+        // 플레이어 본체 (파란색 사각형)
+        ctx.fillStyle = "#3498db";
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+
+        // 공격 범위 시각화 (빨간색 이펙트)
+        if (this.isAttacking) {
+            ctx.fillStyle = "rgba(231, 76, 60, 0.7)";
+            // 오른쪽을 바라보고 공격한다고 가정 (우측 50px 범위 공격)
+            ctx.fillRect(this.x + this.width, this.y + 10, 50, 40);
+        }
+    }
+
+    gainExp(amount) {
+        this.exp += amount;
+        if (this.exp >= 100) {
+            this.level++;
+            this.exp -= 100;
+            document.getElementById("lvl").innerText = this.level;
+        }
+        document.getElementById("exp").innerText = this.exp;
+    }
+}
+
+// 2. 몬스터 클래스
+class Monster {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y - 40;
+        this.width = 40;
+        this.height = 40;
+        this.alive = true;
+        this.vx = -1; // 왼쪽으로 패트롤 이동
+    }
+
+    update() {
+        if (!this.alive) return;
+
+        // 단순 좌우 패트롤 AI
+        this.x += this.vx;
+        if (this.x < 400 || this.x > 750) {
+            this.vx = -this.vx; // 방향 전환
+        }
+    }
+
+    draw() {
+        if (!this.alive) return;
+        // 몬스터 본체 (초록색 사각형)
+        ctx.fillStyle = "#2ecc71";
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+}
+
+// 인스턴스 생성
+const player = new Player();
+const monster = new Monster(700, GROUND_Y);
+
+// 키보드 이벤트 리스너 등록
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+// 3. 충돌 감지 및 게임 루프
+function 게임루프() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // [배경 - 땅 그리기]
+    ctx.fillStyle = "#666";
+    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+    // [업데이트]
+    player.update();
+    monster.update();
+
+    // [전투 로직 - 플레이어 공격 충돌 감지]
+    if (player.isAttacking && monster.alive) {
+        const attackLeft = player.x + player.width;
+        const attackRight = attackLeft + 50;
+        const attackTop = player.y + 10;
+        const attackBottom = attackTop + 40;
+
+        // 공격 범위와 몬스터 상자가 겹치는지 체크 (AABB 충돌)
+        if (attackRight > monster.x && attackLeft < monster.x + monster.width &&
+            attackBottom > monster.y && attackTop < monster.y + monster.height) {
+            
+            // 몬스터 처치
+            monster.alive = false;
+            player.gainExp(40); // 경험치 획득
+            player.gold += 20;  // 골드 획득
+            document.getElementById("gold").innerText = player.gold;
+
+            // 3초 후 리스폰
+            setTimeout(() => {
+                monster.alive = true;
+                monster.x = 700;
+            }, 3000);
+        }
+    }
+
+    // [그리기]
+    player.draw();
+    monster.draw();
+
+    requestAnimationFrame(게임루프);
+}
+
+// 게임 시작
+게임루프();
+</script>
+
+</body>
+</html>

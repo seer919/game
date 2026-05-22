@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>웹 횡스크롤 RPG 게임</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            background-color: #1a1a1a; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+            font-family: 'Malgun Gothic', sans-serif; 
+            color: white; 
+            overflow: hidden;
+        }
+        .ui-container {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            font-size: 16px;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        .hp-bar-bg {
+            width: 150px;
+            height: 20px;
+            background-color: #555;
+            border-radius: 5px;
+            display: inline-block;
+            vertical-align: middle;
+            overflow: hidden;
+            margin-left: 5px;
+        }
+        .hp-bar-fill {
+            width: 100%;
+            height: 100%;
+            background-color: #e74c3c;
+            transition: width 0.1s ease;
+        }
+        canvas { 
+            background: #2c3e50; 
+            border: 4px solid #fff; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.7); 
+        }
+        .controls {
+            margin-top: 15px;
+            color: #aaa;
+            font-size: 14px;
+            text-align: center;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+<div class="ui-container">
+    <div>체력: <div class="hp-bar-bg"><div id="hp-fill" class="hp-bar-fill"></div></div> <span id="hp-txt">100/100</span></div>
+    <div>레벨: <span id="lvl" style="color:#f1c40f">1</span></div>
+    <div>경험치: <span id="exp">0</span>/100</div>
+    <div>골드: <span id="gold" style="color:#f39c12">0</span> G</div>
+</div>
+
+<canvas id="gameCanvas" width="800" height="450"></canvas>
+
+<div class="controls">
+    <strong>[A, D / 좌우 방향키]</strong> 이동 | <strong>[Space]</strong> 점프 | <strong>[K]</strong> 공격<br>
+    <span style="color:#e74c3c">💡 몬스터와 부딪히면 데미지를 입고 넉백됩니다! 오른쪽으로 계속 이동하면 새로운 몬스터가 나옵니다.</span>
+</div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+// 🌍 글로벌 게임 설정
+const GRAVITY = 0.6;
+const GROUND_Y = 380;
+const MAP_WIDTH = 3000; // 전체 맵의 가로 길이 (카메라 스크롤용)
+
+const keys = {};
+let cameraX = 0;
+const damageTexts = []; // 화면에 띄울 데미지 텍스트 배열
+
+// 🧑 1. 플레이어 클래스
+class Player {
+    constructor() {
+        this.x = 100;
+        this.y = 200;
+        this.width = 45;
+        this.height = 65;
+        this.vx = 0;
+        this.vy = 0;
+        this.speed = 5;
+        this.jumpPower = -13;
+        this.isGrounded = false;
+        
+        // 공격 관련
+        this.isAttacking = false;
+        this.attackCooldown = 0;
+        this.direction = "right"; // 바라보는 방향 ('left', 'right')
+
+        // 피격(무적) 관련
+        this.invincibleFrames = 0;
+        
+        // RPG 스탯
+        this.maxHp = 100;
+        this.hp = 100;
+        this.level = 1;
+        this.exp = 0;
+        this.gold = 0;
+        this.attackPower = 25;
+    }
+
+    update() {
+        // 무적 시간 감소
+        if (this.invincibleFrames > 0) this.invincibleFrames--;
+
+        // 좌우 조작 (피격 넉백 중이 아닐 때만 자유 이동 가능)
+        if (this.invincibleFrames < 20) { 
+            if (keys['KeyA'] || keys['ArrowLeft']) {
+                this.vx = -this.speed;
+                this.direction = "left";
+            } else if (keys['KeyD'] || keys['ArrowRight']) {
+                this.vx = this.speed;
+                this.direction = "right";
+            } else {
+                this.vx = 0;
+            }
+        }
+
+        // 점프 조작
+        if (keys['Space'] && this.isGrounded && this.invincibleFrames < 20) {
+            this.vy = this.jumpPower;
+            this.isGrounded = false;
+        }
+
+        // 공격 조작 (K)
+        if (keys['KeyK'] && this.attackCooldown === 0) {
+            this.isAttacking = true;
+            this.attackCooldown = 25; 
+        }
+
+        if (this.attackCooldown > 0) {
+            this.attackCooldown--;
+            if (this.attackCooldown < 12) this.isAttacking = false; // 공격 판정 시간 제한
+        }
+
+        // 중력 및 물리 이동
+        this.vy += GRAVITY;
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // 땅 착지 검사
+        if (this.y + this.height >= GROUND_Y) {
+            this.y = GROUND_Y - this.height;
+            this.vy = 0;
+            this.isGrounded = true;
+        }
+
+        // 맵 바깥 이탈 방지
+        if (this.x < 0) this.x = 0;
+        if (this.x + this.width > MAP_WIDTH) this.x = MAP_WIDTH - this.width;
+
+        // 🎥 카메라 조작: 플레이어가 화면 중심(400px)을 넘어갈 때 카메라 이동
+        if (this.x > 400 && this.x < MAP_WIDTH - 400) {
+            cameraX = this.x - 400;
+        } else if (this.x <= 400) {
+            cameraX = 0;
+        } else if (this.x >= MAP_WIDTH - 400) {
+            cameraX = MAP_WIDTH - 800;
+        }
+    }
+
+    draw() {
+        // 무적 상태일 때 깜빡이는 효과
+        if (this.invincibleFrames > 0 && Math.floor(this.invincibleFrames / 3) % 2 === 0) return;
+
+        ctx.save();
+        // 카메라 좌푯값 반영하여 그리기
+        ctx.translate(-cameraX, 0);
+
+        // 플레이어 본체 (파란색)
+        ctx.fillStyle = "#3498db";
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+
+        // 눈 방향 표시 (바라보는 방향 인지용)
+        ctx.fillStyle = "#ffffff";
+        let eyeX = this.direction === "right" ? this.x + this.width - 15 : this.x + 5;
+        ctx.fillRect(eyeX, this.y + 15, 10, 10);
+
+        // 공격 이펙트 범위 시각화
+        if (this.isAttacking) {
+            ctx.fillStyle = "rgba(231, 76, 60, 0.6)";
+            if (this.direction === "right") {
+                ctx.fillRect(this.x + this.width, this.y + 10, 60, 45);
+            } else {
+                ctx.fillRect(this.x - 60, this.y + 10, 60, 45);
+            }
+        }
+
+        ctx.restore();
+    }
+
+    takeDamage(amount, monsterX) {
+        if (this.invincibleFrames > 0) return; // 무적 상태면 무시
+
+        this.hp -= amount;
+        if (this.hp < 0) this.hp = 0;
+        
+        this.invincibleFrames = 30; // 30프레임 무적
+        this.vy = -6; // 위로 살짝 뜨기
+        
+        // 넉백 방향 결정 (몬스터 위치 반대 방향으로 튕김)
+        this.vx = this.x < monsterX ? -7 : 7; 
+
+        // UI 업데이트
+        updateUI();
+
+        if (this.hp <= 0) {
+            alert("게임 오버! 다시 시작합니다.");
+            this.hp = this.maxHp;
+            this.x = 100;
+            this.y = 200;
+            this.gold = 0;
+            this.exp = 0;
+            updateUI();
+        }
+    }
+
+    gainExp(amount) {
+        this.exp += amount;
+        if (this.exp >= 100) {
+            this.level++;
+            this.exp -= 100;
+            this.maxHp += 20;
+            this.hp = this.maxHp;
+            this.attackPower += 5;
+            createDamageText("LEVEL UP!", this.x + this.width/2, this.y - 20, "#f1c40f");
+        }
+        updateUI();
+    }
+}
+
+// 🐛 2. 몬스터 클래스
+class Monster {
+    constructor(x, y, type = 'normal') {
+        this.x = x;
+        this.y = y - 50;
+        this.width = 45;
+        this.height = 50;
+        this.alive = true;
+        this.vx = -1.5; 
+        this.maxHp = type === 'boss' ? 150 : 50;
+        this.hp = this.maxHp;
+        this.type = type;
+        this.startX = x; // 순찰 범위 기준점
+    }
+
+    update() {
+        if (!this.alive) return;
+
+        // 좌우 정해진 범위 패트롤 AI
+        this.x += this.vx;
+        if (Math.abs(this.x - this.startX) > 150) {
+            this.vx = -this.vx;
+        }
+    }
+
+    draw() {
+        if (!this.alive) return;
+
+        ctx.save();
+        ctx.translate(-cameraX, 0);
+
+        // 몬스터 종류별 색상 (일반: 초록, 보스: 보라)
+        ctx.fillStyle = this.type === 'boss' ? "#9b59b6" : "#2ecc71";
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+
+        // 몬스터 체력바
+        ctx.fillStyle = "#555";
+        ctx.fillRect(this.x, this.y - 12, this.width, 6);
+        ctx.fillStyle = "#e74c3c";
+        let hpRatio = this.hp / this.maxHp;
+        ctx.fillRect(this.x, this.y - 12, this.width * hpRatio, 6);
+
+        ctx.restore();
+    }
+
+    takeDamage(amount) {
+        this.hp -= amount;
+        createDamageText(`-${amount}`, this.x + this.width / 2, this.y, "#e74c3c");
+
+        if (this.hp <= 0) {
+            this.alive = false;
+            let expReward = this.type === 'boss' ? 100 : 35;
+            let goldReward = this.type === 'boss' ? 100 : 20;
+            
+            player.gainExp(expReward);
+            player.gold += goldReward;
+            updateUI();
+
+            // 4초 후 리스폰
+            setTimeout(() => {
+                this.alive = true;
+                this.hp = this.maxHp;
+                this.x = this.startX;
+            }, 4000);
+        }
+    }
+}
+
+// ✍️ 3. 데미지 이펙트 텍스트 클래스
+class DamageText {
+    constructor(text, x, y, color) {
+        this.text = text;
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.alpha = 1; // 투명도
+        this.vy = -1.2; // 위로 스르륵 이동할 속도
+    }
+    update() {
+        this.y += this.vy;
+        this.alpha -= 0.02; // 점점 투명해짐
+    }
+    draw() {
+        ctx.save();
+        ctx.translate(-cameraX, 0);
+        ctx.globalAlpha = this.alpha;
+        ctx.font = "bold 16px sans-serif";
+        ctx.fillStyle = this.color;
+        ctx.textAlign = "center";
+        ctx.fillText(this.text, this.x, this.y);
+        ctx.restore();
+    }
+}
+
+function createDamageText(text, x, y, color = "white") {
+    damageTexts.push(new DamageText(text, x, y, color));
+}
+
+// ⚙️ 4. 게임 데이터 초기화 및 몬스터 배열 배치
+const player = new Player();
+const monsters = [
+    new Monster(600, GROUND_Y),
+    new Monster(1100, GROUND_Y),
+    new Monster(1600, GROUND_Y),
+    new Monster(2100, GROUND_Y),
+    new Monster(2700, GROUND_Y, 'boss') // 맵 끝자락에 위치한 보스 몬스터
+];
+
+// UI 데이터 연동 함수
+function updateUI() {
+    document.getElementById("lvl").innerText = player.level;
+    document.getElementById("exp").innerText = player.exp;
+    document.getElementById("gold").innerText = player.gold;
+    document.getElementById("hp-txt").innerText = `${player.hp}/${player.maxHp}`;
+    
+    let hpPercent = (player.hp / player.maxHp) * 100;
+    document.getElementById("hp-fill").style.width = hpPercent + "%";
+}
+
+// 키보드 이벤트 리스너
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
+
+// AABB 충돌 감지 헬퍼 함수
+function isColliding(rect1, rect2) {
+    return rect1.x < rect2.x + rect2.width &&
+           rect1.x + rect1.width > rect2.x &&
+           rect1.y < rect2.y + rect2.height &&
+           rect1.y + rect1.height > rect2.y;
+}
+
+// 🔄 5. 핵심 메인 게임 루프
+function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // [배경 그리긴] 멀리 있는 가상 풍경(선) 표시 - 스크롤 체감용
+    ctx.save();
+    ctx.translate(-cameraX * 0.3, 0); // 배경은 느리게 밀리는 원경 효과(Parallax)
+    ctx.strokeStyle = "#34495e";
+    ctx.lineWidth = 2;
+    for(let i=0; i<MAP_WIDTH; i+=200) {
+        ctx.strokeRect(i, 150, 100, 230);
+    }
+    ctx.restore();
+
+    // [땅 그리기]
+    ctx.save();
+    ctx.translate(-cameraX, 0);
+    ctx.fillStyle = "#7f8c8d";
+    ctx.fillRect(0, GROUND_Y, MAP_WIDTH, canvas.height - GROUND_Y);
+    ctx.fillStyle = "#95a5a6"; // 땅 윗부분 잔디 효과 실선
+    ctx.fillRect(0, GROUND_Y, MAP_WIDTH, 6);
+    ctx.restore();
+
+    // [업데이트]
+    player.update();
+    monsters.forEach(m => m.update());
+
+    // [충돌 및 전투 체크]
+    monsters.forEach(monster => {
+        if (!monster.alive) return;
+
+        // 로직 A: 플레이어 공격 범위 충돌 검사
+        if (player.isAttacking) {
+            let attackRange = {
+                x: player.direction === "right" ? player.x + player.width : player.x - 60,
+                y: player.y + 10,
+                width: 60,
+                height: 45
+            };
+            if (isColliding(attackRange, monster)) {
+                monster.takeDamage(player.attackPower);
+                player.isAttacking = false; // 한 번의 공격 동작에 연타 방지
+            }
+        }
+
+        // 로직 B: 몬스터 바디와 플레이어 충돌 검사 (플레이어 피격)
+        if (isColliding(player, monster)) {
+            player.takeDamage(15, monster.x); // 데미지 15 입음
+        }
+    });
+
+    // [그리기]
+    player.draw();
+    monsters.forEach(m => m.draw());
+
+    // [데미지 이펙트 업데이트 및 그리기]
+    for (let i = damageTexts.length - 1; i >= 0; i--) {
+        damageTexts[i].update();
+        damageTexts[i].draw();
+        if (damageTexts[i].alpha <= 0) {
+            damageTexts.splice(i, 1); // 투명해진 텍스트 제거
+        }
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+// 최초 실행
+updateUI();
+gameLoop();
+</script>
+
+</body>
+</html>

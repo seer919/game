@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>무한 샷건 서바이벌 RPG</title>
+    <title>하이퍼 콤보 액션 RPG</title>
     <style>
         * { box-sizing: border-box; }
         body { 
-            background-color: #111; 
+            background-color: #0b0f14; 
             display: flex; 
             flex-direction: column; 
             align-items: center; 
@@ -17,48 +17,62 @@
             font-family: 'Malgun Gothic', sans-serif; 
             color: white; 
             overflow: hidden;
+            user-select: none;
         }
         .ui-container {
             display: flex;
             gap: 20px;
             margin-bottom: 15px;
-            font-size: 16px;
-            background: rgba(0,0,0,0.8);
+            font-size: 15px;
+            background: rgba(15, 23, 42, 0.9);
             padding: 12px 25px;
-            border-radius: 8px;
-            border: 1px solid #333;
+            border-radius: 12px;
+            border: 2px solid #1e293b;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
         }
         .hp-bar-bg {
-            width: 150px;
-            height: 20px;
-            background-color: #444;
-            border-radius: 5px;
+            width: 140px;
+            height: 18px;
+            background-color: #334155;
+            border-radius: 6px;
             display: inline-block;
             vertical-align: middle;
             overflow: hidden;
             margin-left: 5px;
+            border: 1px solid #475569;
         }
         .hp-bar-fill {
             width: 100%;
             height: 100%;
-            background-color: #e74c3c;
+            background: linear-gradient(90deg, #ef4444, #dc2626);
             transition: width 0.1s ease;
         }
-        .cooldown-container {
-            font-size: 14px;
-            color: #00ffff;
-            display: flex;
-            align-items: center;
+        /* 🔥 콤보 UI 스타일 */
+        .combo-box {
+            position: absolute;
+            right: 10%;
+            top: 15%;
+            font-size: 40px;
+            font-weight: 900;
+            color: #f59e0b;
+            text-shadow: 0 0 10px #f59e0b, 3px 3px 0px #000;
+            font-style: italic;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
+        .combo-box.active { opacity: 1; transform: scale(1); }
+        
         canvas { 
-            background: #0f171e; 
-            border: 4px solid #444; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.9); 
+            background: #020617; 
+            border: 4px solid #334155; 
+            border-radius: 8px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7); 
         }
         .controls {
             margin-top: 15px;
-            color: #aaa;
-            font-size: 14px;
+            color: #94a3b8;
+            font-size: 13px;
             text-align: center;
             line-height: 1.6;
         }
@@ -67,50 +81,64 @@
 <body>
 
 <div class="ui-container">
-    <div>체력: <div class="hp-bar-bg"><div id="hp-fill" class="hp-bar-fill"></div></div> <span id="hp-txt">100/100</span></div>
-    <div>레벨: <span id="lvl" style="color:#f1c40f">1</span></div>
-    <div>경험치: <span id="exp">0</span>/100</div>
-    <div>골드: <span id="gold" style="color:#f39c12">0</span> G</div>
-    <div class="cooldown-container">샷건 재장전: <span id="cd-txt" style="font-weight:bold;">READY</span></div>
+    <div>❤️ HP: <div class="hp-bar-bg"><div id="hp-fill" class="hp-bar-fill"></div></div> <span id="hp-txt">100/100</span></div>
+    <div>⭐ LV: <span id="lvl" style="color:#f59e0b; font-weight:bold;">1</span></div>
+    <div>✨ EXP: <span id="exp">0</span>/100</div>
+    <div>💰 GOLD: <span id="gold" style="color:#eab308">0</span></div>
+    <div>⚡ 샷건: <span id="cd-txt" style="color:#22d3ee; font-weight:bold;">READY</span></div>
 </div>
+
+<div id="combo-ui" class="combo-box">0 COMBO</div>
 
 <canvas id="gameCanvas" width="800" height="450"></canvas>
 
 <div class="controls">
-    <strong>[A, D]</strong> 좌우 이동 | <strong>[W]</strong> 점프 | <strong>[K]</strong> 근접 공격 | <strong>[L]</strong> <span style="color:#00ffff; font-weight:bold;">대형 마법 샷건 발사 (쿨타임 길음)</span><br>
-    <span style="color:#ff7675">🔥 타격 쾌감: 샷건 발사 및 강력한 몹 타격 시 화면이 다이내믹하게 흔들립니다! 앞으로 전진해 보세요.</span>
+    <strong>[A, D]</strong> 이동 | <strong>[W]</strong> 점프 | <strong>[Shift]</strong> <span style="color:#f43f5e; font-weight:bold;">무적 무한 대시</span> | <strong>[K]</strong> 검기 | <strong>[L]</strong> 샷건 마법<br>
+    <span style="color:#38bdf8">💡 꿀팁: 몹이 공격할 때 Shift로 파고들어 샷건(L)을 영거리에서 전탄 명중시키면 보스도 살살 녹습니다!</span>
 </div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// 🌍 글로벌 게임 설정
+// 🌍 시스템 글로벌 변수
 const GRAVITY = 0.6;
 const GROUND_Y = 380;
-
 const keys = {};
 let cameraX = 0;
 let lastGeneratedX = 800; 
-let shakeTime = 0; // 🎥 화면 흔들림 프레임 수 변수
+let shakeTime = 0;
 
-// 엔티티 관리 배열
+// 🔥 글로벌 콤보 매니저
+let globalCombo = 0;
+let comboTimer = 0;
+
+// 엔티티 관리자
 let platforms = [
-    { x: 300, y: 270, width: 160, height: 15 },
-    { x: 580, y: 200, width: 160, height: 15 }
+    { x: 300, y: 260, width: 160, height: 15 },
+    { x: 600, y: 190, width: 160, height: 15 }
 ];
 let monsters = [];
 const projectiles = []; 
 const damageTexts = []; 
 const particles = []; 
 
+// 콤보 작동 함수
+function gainCombo() {
+    globalCombo++;
+    comboTimer = 180; // 3초(180프레임) 동안 콤보 유지
+    const ui = document.getElementById("combo-ui");
+    ui.innerText = `${globalCombo} COMBO`;
+    ui.classList.add("active");
+}
+
 // ✨ 1. 이펙트 파티클 클래스
 class Particle {
-    constructor(x, y, color) {
+    constructor(x, y, color, vx, vy) {
         this.x = x; this.y = y;
-        this.size = Math.random() * 4 + 2; 
-        this.vx = (Math.random() - 0.5) * 8; 
-        this.vy = (Math.random() - 0.5) * 8 - 1; 
+        this.size = Math.random() * 3 + 2; 
+        this.vx = vx || (Math.random() - 0.5) * 8; 
+        this.vy = vy || (Math.random() - 0.5) * 8 - 1; 
         this.color = color;
         this.alpha = 1;
     }
@@ -129,122 +157,122 @@ function createExplosion(x, y, color, count = 12) {
     for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color));
 }
 
-// 🔮 2. 샷건 투사체 클래스 (퍼져나갈 수 있도록 vy 속성 추가)
+// 🔮 2. 산탄 투사체 클래스
 class Projectile {
     constructor(x, y, vx, vy, power) {
-        this.x = x;
-        this.y = y;
-        this.width = 10;
-        this.height = 10;
-        this.vx = vx; // X축 속도
-        this.vy = vy; // Y축 퍼짐 속도
-        this.power = power;
-        this.alive = true;
-        this.color = "#00ffff"; 
+        this.x = x; this.y = y; this.width = 10; this.height = 10;
+        this.vx = vx; this.vy = vy; this.power = power; this.alive = true;
     }
     update() {
-        this.x += this.vx;
-        this.y += this.vy; // 부채꼴로 퍼지게 만듦
-
-        // 날아가면서 마법 잔상 파티클 생성
-        if (Math.random() > 0.3) {
-            particles.push(new Particle(this.x, this.y, "rgba(0, 255, 255, 0.3)"));
-        }
-        // 화면 범위를 크게 벗어나면 삭제
-        if (this.x < cameraX - 100 || this.x > cameraX + 900 || this.y < 0 || this.y > 450) {
-            this.alive = false;
-        }
+        this.x += this.vx; this.y += this.vy;
+        if (Math.random() > 0.4) particles.push(new Particle(this.x, this.y, "rgba(34, 211, 238, 0.3)", -this.vx*0.2, 0));
+        if (this.x < cameraX - 100 || this.x > cameraX + 900 || this.y < 0 || this.y > 450) this.alive = false;
     }
     draw() {
-        ctx.save();
-        ctx.translate(-cameraX, 0);
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
-        ctx.fillStyle = this.color;
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, 5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.save(); ctx.translate(-cameraX, 0);
+        ctx.shadowBlur = 10; ctx.shadowColor = "#22d3ee"; ctx.fillStyle = "#22d3ee";
+        ctx.beginPath(); ctx.arc(this.x, this.y, 5, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
     }
 }
 
-// 🧑 3. 플레이어 클래스
+// 🧑 3. 플레이어 클래스 (대시 기능 탑재)
 class Player {
     constructor() {
-        this.x = 150; this.y = 200;
-        this.width = 45; this.height = 65;
+        this.x = 150; this.y = 200; this.width = 45; this.height = 65;
         this.vx = 0; this.vy = 0;
-        this.speed = 5.5; this.jumpPower = -13.5;
+        this.baseSpeed = 5.5; this.jumpPower = -13.5;
         this.isGrounded = false;
         
         this.isAttacking = false;
         this.attackCooldown = 0;
-        this.rangedCooldown = 0; // 샷건 쿨타임 변수
-        this.maxRangedCooldown = 90; // 90프레임 = 약 1.5초의 긴 쿨타임
+        this.rangedCooldown = 0; 
+        this.maxRangedCooldown = 80; 
         this.direction = "right"; 
         this.invincibleFrames = 0;
+
+        // ⚡ 대시 시스템 스펙
+        this.dashCooldown = 0;
+        this.dashFrames = 0; 
         
         // 스탯
         this.maxHp = 100; this.hp = 100;
         this.level = 1; this.exp = 0; this.gold = 0;
-        this.attackPower = 25; 
-        this.magicPower = 18;  // 탄 한 발당 데미지
+        this.attackPower = 25; this.magicPower = 16;
     }
 
     update() {
         if (this.invincibleFrames > 0) this.invincibleFrames--;
         if (this.attackCooldown > 0) this.attackCooldown--;
         if (this.rangedCooldown > 0) this.rangedCooldown--;
+        if (this.dashCooldown > 0) this.dashCooldown--;
 
-        // 좌우 이동 조작
-        if (this.invincibleFrames < 20) { 
-            if (keys['KeyA'] || keys['ArrowLeft']) {
-                this.vx = -this.speed; this.direction = "left";
-            } else if (keys['KeyD'] || keys['ArrowRight']) {
-                this.vx = this.speed; this.direction = "right";
-            } else { this.vx = 0; }
+        // 콤보 보너스 속도 계산 (콤보 쌓이면 더 빨라짐)
+        let currentSpeed = this.baseSpeed + Math.min(globalCombo * 0.1, 3);
+
+        // ⚡ 대시 발동 및 유지 처리
+        if (keys['ShiftLeft'] && this.dashCooldown === 0 && this.dashFrames === 0) {
+            this.dashFrames = 12; // 12프레임 동안 초고속 돌진
+            this.dashCooldown = 40; // 대시 재사용 대기시간
+            this.invincibleFrames = 15; // 대시 시작 시 무적 시간 부여
+            this.vy = 0; // 공중 대시 시 가라앉음 방지
         }
 
-        // W 키로 점프
-        if (keys['KeyW'] && this.isGrounded && this.invincibleFrames < 20) {
+        if (this.dashFrames > 0) {
+            this.dashFrames--;
+            this.vx = this.direction === "right" ? currentSpeed * 2.2 : -currentSpeed * 2.2;
+            this.vy = 0; // 대시 도중엔 중력 무시 일직선 돌진
+            // 대시 잔상 이펙트
+            if (this.dashFrames % 2 === 0) {
+                particles.push(new Particle(this.x + this.width/2, this.y + this.height/2, "rgba(244, 63, 94, 0.4)", 0, 0));
+            }
+        } else {
+            // 일반 일반 좌우 이동 조작
+            if (this.invincibleFrames < 20) { 
+                if (keys['KeyA'] || keys['ArrowLeft']) {
+                    this.vx = -currentSpeed; this.direction = "left";
+                } else if (keys['KeyD'] || keys['ArrowRight']) {
+                    this.vx = currentSpeed; this.direction = "right";
+                } else { this.vx = 0; }
+            }
+        }
+
+        // 점프 (대시 중 아닐 때만)
+        if (keys['KeyW'] && this.isGrounded && this.dashFrames === 0 && this.invincibleFrames < 20) {
             this.vy = this.jumpPower; this.isGrounded = false;
         }
 
-        // K 키 근접 공격
-        if (keys['KeyK'] && this.attackCooldown === 0) {
-            this.isAttacking = true; this.attackCooldown = 22; 
+        // 근접 K
+        if (keys['KeyK'] && this.attackCooldown === 0 && this.dashFrames === 0) {
+            this.isAttacking = true; this.attackCooldown = 20; 
         }
         if (this.attackCooldown < 10) this.isAttacking = false;
 
-        // 🌟 샷건 다량 발사 로직 (L키 클릭)
-        if (keys['KeyL'] && this.rangedCooldown === 0) {
+        // 샷건 L
+        if (keys['KeyL'] && this.rangedCooldown === 0 && this.dashFrames === 0) {
             let shootX = this.direction === "right" ? this.x + this.width : this.x;
             let shootY = this.y + this.height / 2 - 5;
-            let baseVx = this.direction === "right" ? 12 : -12;
+            let baseVx = this.direction === "right" ? 13 : -13;
 
-            // 총 5발의 탄환을 상하 각도를 다르게(vy 값을 다르게) 주어 샷건처럼 방출
-            // vy값 종류: -4, -2, 0, 2, 4 (부채꼴 확산형)
             for (let i = -2; i <= 2; i++) {
-                projectiles.push(new Projectile(shootX, shootY, baseVx, i * 2, this.magicPower));
+                projectiles.push(new Projectile(shootX, shootY, baseVx, i * 1.8, this.magicPower));
             }
-
-            // 발사 이펙트 파티클 대량 생성
-            createExplosion(shootX, shootY, "#00ffff", 15);
-
-            this.rangedCooldown = this.maxRangedCooldown; // 긴 쿨타임 적용
-            shakeTime = 14; // 💥 샷건 반동으로 화면 강하게 흔들기!
+            createExplosion(shootX, shootY, "#22d3ee", 15);
+            this.rangedCooldown = this.maxRangedCooldown; 
+            shakeTime = 12; 
         }
 
-        // 물리 엔진 연산
-        this.vy += GRAVITY; this.x += this.vx; this.y += this.vy;
+        // 물리 가속
+        if (this.dashFrames === 0) this.vy += GRAVITY; 
+        this.x += this.vx; this.y += this.vy;
 
-        // 기본 땅 착지
+        // 지면 착지 기본 검사
         this.isGrounded = false; 
         if (this.y + this.height >= GROUND_Y) {
             this.y = GROUND_Y - this.height; this.vy = 0; this.isGrounded = true;
         }
 
-        // 공중 발판 착지
+        // 발판 착지
         platforms.forEach(p => {
             if (this.x + this.width > p.x && this.x < p.x + p.width) {
                 if (this.y + this.height >= p.y && this.y + this.height - this.vy <= p.y + 12 && this.vy >= 0) {
@@ -253,7 +281,7 @@ class Player {
             }
         });
 
-        // 카메라 추적 및 빽도 차단 (화면 왼쪽 한계선 가두기)
+        // 카메라 추적 및 백도 가두기 벽
         if (this.x > 350) cameraX = this.x - 350;
         if (this.x < cameraX) this.x = cameraX; 
     }
@@ -262,42 +290,51 @@ class Player {
         if (this.invincibleFrames > 0 && Math.floor(this.invincibleFrames / 3) % 2 === 0) return;
         ctx.save(); ctx.translate(-cameraX, 0);
 
-        ctx.shadowBlur = 15; ctx.shadowColor = "#3498db";
+        ctx.shadowBlur = 15; ctx.shadowColor = this.dashFrames > 0 ? "#f43f5e" : "#38bdf8";
         let gradient = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.height);
-        gradient.addColorStop(0, "#5dade2"); gradient.addColorStop(1, "#2471a3"); 
-        ctx.fillStyle = gradient;
         
+        if (this.dashFrames > 0) {
+            gradient.addColorStop(0, "#fb7185"); gradient.addColorStop(1, "#e11d48"); // 대시 중 붉은 번개색
+        } else {
+            gradient.addColorStop(0, "#38bdf8"); gradient.addColorStop(1, "#0369a1"); 
+        }
+        
+        ctx.fillStyle = gradient;
         ctx.beginPath(); ctx.roundRect(this.x, this.y, this.width, this.height, 8); ctx.fill();
 
-        // 캐릭터 눈동자
         ctx.shadowBlur = 0; ctx.fillStyle = "#fff";
         let eyeX = this.direction === "right" ? this.x + this.width - 14 : this.x + 6;
         ctx.fillRect(eyeX, this.y + 16, 8, 8);
 
-        // 근접 검기 이펙트
         if (this.isAttacking) {
             let atkGrad = ctx.createLinearGradient(this.x, this.y, this.x + (this.direction === "right" ? 90 : -90), this.y);
-            atkGrad.addColorStop(0, "rgba(231, 76, 60, 0.8)"); atkGrad.addColorStop(1, "rgba(231, 76, 60, 0)"); 
+            atkGrad.addColorStop(0, "rgba(244, 63, 94, 0.9)"); atkGrad.addColorStop(1, "rgba(244, 63, 94, 0)"); 
             ctx.fillStyle = atkGrad;
-            if (this.direction === "right") ctx.fillRect(this.x + this.width, this.y + 10, 65, 45);
-            else ctx.fillRect(this.x - 65, this.y + 10, 65, 45);
+            if (this.direction === "right") ctx.fillRect(this.x + this.width, this.y + 10, 70, 45);
+            else ctx.fillRect(this.x - 70, this.y + 10, 70, 45);
         }
         ctx.restore();
     }
 
     takeDamage(amount, monsterX) {
-        if (this.invincibleFrames > 0) return; 
+        if (this.invincibleFrames > 0 || this.dashFrames > 0) return; // 대시나 무적시 완전 회피 판정
+        
         this.hp -= amount; if (this.hp < 0) this.hp = 0;
-        this.invincibleFrames = 30; this.vy = -5; 
+        this.invincibleFrames = 35; this.vy = -5; 
         this.vx = this.x < monsterX ? -6 : 6; 
-        createExplosion(this.x + this.width/2, this.y + this.height/2, "#e74c3c", 8);
-        shakeTime = 10; // 피격 시 화면 끄덕임 효과
+        createExplosion(this.x + this.width/2, this.y + this.height/2, "#ef4444", 10);
+        shakeTime = 12; 
+        
+        // 피격 시 무자비하게 콤보 리셋!!
+        globalCombo = 0;
+        document.getElementById("combo-ui").classList.remove("active");
+        
         updateUI();
 
         if (this.hp <= 0) {
-            alert("사망하셨습니다! 여정 스탯이 초기화되고 기지로 귀환합니다.");
-            this.hp = this.maxHp; this.x = cameraX + 100; this.y = 200;
-            this.gold = Math.floor(this.gold / 2); this.exp = 0; updateUI();
+            alert("게임 오버! 마을로 강제 소환당합니다.");
+            this.hp = this.maxHp; this.x = cameraX + 80; this.y = 200;
+            this.gold = Math.floor(this.gold * 0.7); updateUI();
         }
     }
 
@@ -305,38 +342,39 @@ class Player {
         this.exp += amount;
         if (this.exp >= 100) {
             this.level++; this.exp -= 100; this.maxHp += 15; this.hp = this.maxHp; this.attackPower += 4; this.magicPower += 2;
-            createDamageText("LEVEL UP!", this.x + this.width/2, this.y - 20, "#f1c40f");
-            createExplosion(this.x + this.width/2, this.y + this.height/2, "#f1c40f", 20);
+            createDamageText("LEVEL UP!", this.x + this.width/2, this.y - 20, "#eab308");
+            createExplosion(this.x + this.width/2, this.y + this.height/2, "#eab308", 25);
         }
         updateUI();
     }
 }
 
-// 👾 4. 5종의 다채로운 몬스터 클래스
+// 👾 4. 5종 몬스터 클래스 (화이트 피격 플래시 변수 탑재)
 class Monster {
     constructor(x, y, type = 'normal') {
         this.x = x; this.alive = true; this.type = type; this.startX = x;
+        this.flashFrames = 0; // ⚪ 화이트 플래시 버퍼 프레임
 
         switch(type) {
             case 'fast': 
-                this.width = 35; this.height = 35; this.maxHp = 25; this.vx = -3.2; this.damage = 8;
-                this.colorStart = "#1abc9c"; this.colorEnd = "#117a65"; this.shadowColor = "#1abc9c";
+                this.width = 35; this.height = 35; this.maxHp = 24; this.vx = -3.4; this.damage = 7;
+                this.colorStart = "#06b6d4"; this.colorEnd = "#0891b2"; this.shadowColor = "#06b6d4";
                 break;
             case 'tank': 
-                this.width = 55; this.height = 65; this.maxHp = 120; this.vx = -1.0; this.damage = 25;
-                this.colorStart = "#e67e22"; this.colorEnd = "#935116"; this.shadowColor = "#e67e22";
+                this.width = 55; this.height = 65; this.maxHp = 130; this.vx = -0.9; this.damage = 22;
+                this.colorStart = "#f97316"; this.colorEnd = "#ea580c"; this.shadowColor = "#f97316";
                 break;
             case 'ghost': 
-                this.width = 38; this.height = 42; this.maxHp = 45; this.vx = -1.6; this.damage = 12;
-                this.colorStart = "#e84393"; this.colorEnd = "#a29bfe"; this.shadowColor = "#fd79a8";
+                this.width = 38; this.height = 42; this.maxHp = 40; this.vx = -1.6; this.damage = 12;
+                this.colorStart = "#ec4899"; this.colorEnd = "#db2777"; this.shadowColor = "#ec4899";
                 break;
             case 'boss': 
-                this.width = 70; this.height = 85; this.maxHp = 350; this.vx = -0.7; this.damage = 35;
-                this.colorStart = "#9b59b6"; this.colorEnd = "#4a235a"; this.shadowColor = "#e74c3c";
+                this.width = 75; this.height = 90; this.maxHp = 380; this.vx = -0.6; this.damage = 32;
+                this.colorStart = "#a855f7"; this.colorEnd = "#9333ea"; this.shadowColor = "#ef4444";
                 break;
             default: 
-                this.width = 40; this.height = 45; this.maxHp = 55; this.vx = -1.8; this.damage = 14;
-                this.colorStart = "#2ecc71"; this.colorEnd = "#196f3d"; this.shadowColor = "#2ecc71";
+                this.width = 40; this.height = 45; this.maxHp = 50; this.vx = -1.8; this.damage = 13;
+                this.colorStart = "#10b981"; this.colorEnd = "#059669"; this.shadowColor = "#10b981";
         }
         
         this.y = type === 'ghost' ? y - 130 : y - this.height;
@@ -346,7 +384,9 @@ class Monster {
     update() {
         if (!this.alive) return;
         this.x += this.vx;
-        let patrolRange = this.type === 'boss' ? 50 : 130;
+        if (this.flashFrames > 0) this.flashFrames--; // 플래시 타이머 감소
+
+        let patrolRange = this.type === 'boss' ? 40 : 130;
         if (Math.abs(this.x - this.startX) > patrolRange) this.vx = -this.vx;
     }
 
@@ -354,83 +394,91 @@ class Monster {
         if (!this.alive) return;
         ctx.save(); ctx.translate(-cameraX, 0);
 
-        ctx.shadowBlur = 12; ctx.shadowColor = this.shadowColor;
-        let mGrad = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.height);
-        mGrad.addColorStop(0, this.colorStart); mGrad.addColorStop(1, this.colorEnd);
-        ctx.fillStyle = mGrad;
+        // 🌟 타격 피격 시 순간 하얗게 완전히 발색 렌더링 (타격감 핵심)
+        if (this.flashFrames > 0) {
+            ctx.fillStyle = "#ffffff";
+            ctx.shadowBlur = 20; ctx.shadowColor = "#ffffff";
+        } else {
+            ctx.shadowBlur = 12; ctx.shadowColor = this.shadowColor;
+            let mGrad = ctx.createLinearGradient(this.x, this.y, this.x, this.y + this.height);
+            mGrad.addColorStop(0, this.colorStart); mGrad.addColorStop(1, this.colorEnd);
+            ctx.fillStyle = mGrad;
+        }
 
         ctx.beginPath(); ctx.roundRect(this.x, this.y, this.width, this.height, 6); ctx.fill();
 
-        // 체력바
-        ctx.shadowBlur = 0; ctx.fillStyle = "#333"; ctx.fillRect(this.x, this.y - 12, this.width, 6);
-        ctx.fillStyle = "#e74c3c"; ctx.fillRect(this.x, this.y - 12, this.width * (this.hp / this.maxHp), 6);
+        // 몹 피통 바
+        ctx.shadowBlur = 0; ctx.fillStyle = "#1e293b"; ctx.fillRect(this.x, this.y - 12, this.width, 5);
+        ctx.fillStyle = "#ef4444"; ctx.fillRect(this.x, this.y - 12, this.width * (this.hp / this.maxHp), 5);
 
         ctx.restore();
     }
 
     takeDamage(amount) {
         this.hp -= amount;
-        createDamageText(`-${amount}`, this.x + this.width / 2, this.y - 10, this.type === 'boss' ? "#ffeb3b" : "#ff7675");
-        createExplosion(this.x + this.width/2, this.y + this.height/2, this.shadowColor, 10);
+        this.flashFrames = 5; // 5프레임 동안 새하얗게 플래시 ON
+        
+        createDamageText(`-${amount}`, this.x + this.width / 2, this.y - 10, this.type === 'boss' ? "#fbbf24" : "#f87171");
+        createExplosion(this.x + this.width/2, this.y + this.height/2, this.shadowColor, 8);
 
-        // 탱크나 보스를 때리면 묵직한 타격감 진동 효과 발생
-        if (this.type === 'boss' || this.type === 'tank') shakeTime = 6;
+        // 타격 성공 시 글로벌 콤보 누적 상승!
+        gainCombo();
+
+        if (this.type === 'boss' || this.type === 'tank') shakeTime = 7;
 
         if (this.hp <= 0) {
             this.alive = false;
-            let goldReward = this.type === 'boss' ? 200 : (this.type === 'tank' ? 60 : 25);
-            let expReward = this.type === 'boss' ? 150 : (this.type === 'tank' ? 50 : 30);
+            // 콤보가 높을수록 보너스 골드 지급 대폭 상향
+            let comboBonus = 1 + (globalCombo * 0.05);
+            let goldReward = Math.floor((this.type === 'boss' ? 200 : (this.type === 'tank' ? 55 : 20)) * comboBonus);
+            let expReward = this.type === 'boss' ? 160 : (this.type === 'tank' ? 50 : 30);
+            
             player.gold += goldReward; player.gainExp(expReward);
         }
     }
 }
 
-// ✍️ 5. 텍스트 클래스
+// ✍️ 5. 데미지 텍스트 스킨
 class DamageText {
     constructor(text, x, y, color) {
         this.text = text; this.x = x; this.y = y; this.color = color;
         this.alpha = 1; this.vy = -1.5; 
     }
-    update() { this.y += this.vy; this.alpha -= 0.025; }
+    update() { this.y += this.vy; this.alpha -= 0.03; }
     draw() {
         ctx.save(); ctx.translate(-cameraX, 0); ctx.globalAlpha = this.alpha;
-        ctx.font = "bold 17px sans-serif"; ctx.fillStyle = this.color;
+        ctx.font = "black 17px sans-serif"; ctx.fillStyle = this.color;
         ctx.textAlign = "center"; ctx.fillText(this.text, this.x, this.y);
         ctx.restore();
     }
 }
 function createDamageText(text, x, y, color) { damageTexts.push(new DamageText(text, x, y, color)); }
 
-// 🔄 6. 실시간 무한 절차적 맵 생성 및 클리닝 알고리즘
+// 🔄 6. 무한 절차적 생성 및 가비지 콜렉터 클리닝
 function handleInfiniteWorld() {
     if (player.x + 900 > lastGeneratedX) {
-        lastGeneratedX += Math.random() * 250 + 220; 
+        lastGeneratedX += Math.random() * 240 + 210; 
 
-        // 확률형 공중 발판 생성
-        if (Math.random() > 0.3) {
+        if (Math.random() > 0.35) {
             platforms.push({
-                x: lastGeneratedX,
-                y: 180 + Math.random() * 110,
-                width: 130 + Math.random() * 80,
-                height: 15
+                x: lastGeneratedX, y: 170 + Math.random() * 110,
+                width: 120 + Math.random() * 80, height: 15
             });
         }
 
-        // 5개 종류의 몬스터 확률 배정 스폰
         let mobPool = ['normal', 'fast', 'tank', 'ghost'];
-        if (Math.random() > 0.85) mobPool.push('boss'); // 15% 보스 기습 출현
+        if (Math.random() > 0.86) mobPool.push('boss'); 
         let rolledType = mobPool[Math.floor(Math.random() * mobPool.length)];
 
         monsters.push(new Monster(lastGeneratedX, GROUND_Y, rolledType));
     }
 
-    // 지나온 과거의 맵 오브젝트 완전 소멸 삭제 (최적화)
+    // 완전히 스크롤 밖으로 밀려 나간 것 카운트 아웃 파괴 (청소부 로직)
     let purgeLimit = cameraX - 300;
     platforms = platforms.filter(p => p.x + p.width > purgeLimit);
     monsters = monsters.filter(m => m.alive && m.x + m.width > purgeLimit); 
 }
 
-// UI 쿨타임 업데이트 및 출력 연동
 const player = new Player();
 function updateUI() {
     document.getElementById("lvl").innerText = player.level;
@@ -440,16 +488,23 @@ function updateUI() {
     document.getElementById("hp-fill").style.width = (player.hp / player.maxHp) * 100 + "%";
 }
 
-// 매 프레임마다 UI상의 쿨타임 글자 업데이트
 function updateCooldownUI() {
     const cdTxt = document.getElementById("cd-txt");
     if (player.rangedCooldown > 0) {
-        let secondsLeft = (player.rangedCooldown / 60).toFixed(1);
-        cdTxt.innerText = `${secondsLeft}초`;
-        cdTxt.style.color = "#ff7675";
+        cdTxt.innerText = `${(player.rangedCooldown / 60).toFixed(1)}s`;
+        cdTxt.style.color = "#ef4444";
     } else {
         cdTxt.innerText = "READY";
-        cdTxt.style.color = "#00ffff";
+        cdTxt.style.color = "#22d3ee";
+    }
+
+    // 콤보 타이머 자동 감소 시스템 연동 및 UI 제어
+    if (comboTimer > 0) {
+        comboTimer--;
+        if (comboTimer <= 0) {
+            globalCombo = 0;
+            document.getElementById("combo-ui").classList.remove("active");
+        }
     }
 }
 
@@ -463,57 +518,51 @@ function isColliding(rect1, rect2) {
            rect1.y + rect1.height > rect2.y;
 }
 
-// 🔄 7. 최종 메인 게임 루프 엔진
+// 🔄 7. 메인 루프 게임엔진
 function gameLoop() {
-    // 🎥 [화면 흔들림 연출 시스템 구현]
-    let offsetX = 0;
-    let offsetY = 0;
+    let offsetX = 0; let offsetY = 0;
     if (shakeTime > 0) {
-        offsetX = (Math.random() - 0.5) * 10; // 무작위 진동 범위 값 계산
-        offsetY = (Math.random() - 0.5) * 10;
+        offsetX = (Math.random() - 0.5) * 12; 
+        offsetY = (Math.random() - 0.5) * 12;
         shakeTime--;
     }
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    ctx.save();
-    ctx.translate(offsetX, offsetY); // 화면 흔들림 오프셋 전체 적용
+    ctx.save(); ctx.translate(offsetX, offsetY); 
 
     handleInfiniteWorld();
 
-    // 배경 드로잉 - 패럴랙스 카메라
-    ctx.save(); ctx.translate(-cameraX * 0.2, 0); ctx.strokeStyle = "#1b2631"; ctx.lineWidth = 2;
-    for(let i = Math.floor(cameraX*0.2/200)*200; i < cameraX*0.2 + 1200; i+=200) {
-        ctx.strokeRect(i, 160, 110, 220);
+    // 원경 루프
+    ctx.save(); ctx.translate(-cameraX * 0.15, 0); ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 2;
+    for(let i = Math.floor(cameraX*0.15/250)*250; i < cameraX*0.15 + 1200; i+=250) {
+        ctx.strokeRect(i, 130, 140, 250);
     }
     ctx.restore();
 
-    // 공중 발판 렌더
-    ctx.save(); ctx.translate(-cameraX, 0); ctx.fillStyle = "#d35400";
-    ctx.shadowBlur = 6; ctx.shadowColor = "#d35400";
+    // 발판 렌더
+    ctx.save(); ctx.translate(-cameraX, 0); ctx.fillStyle = "#475569";
     platforms.forEach(p => { ctx.beginPath(); ctx.roundRect(p.x, p.y, p.width, p.height, 4); ctx.fill(); });
     ctx.restore();
 
-    // 지하 땅바닥 렌더
-    ctx.save(); ctx.translate(-cameraX, 0); ctx.fillStyle = "#2c3e50";
+    // 땅바닥 렌더
+    ctx.save(); ctx.translate(-cameraX, 0); ctx.fillStyle = "#1e293b";
     ctx.fillRect(cameraX - 100, GROUND_Y, 1000, canvas.height - GROUND_Y);
-    ctx.fillStyle = "#00ffcc"; ctx.fillRect(cameraX - 100, GROUND_Y, 1000, 5); 
+    ctx.fillStyle = "#f43f5e"; ctx.fillRect(cameraX - 100, GROUND_Y, 1000, 4); 
     ctx.restore();
 
-    // 엔티티 업데이트
     player.update();
     projectiles.forEach(p => p.update());
     monsters.forEach(m => m.update());
 
-    // 충돌 체킹 검사
+    // 충돌 판정 매트릭스
     monsters.forEach(monster => {
         if (!monster.alive) return;
 
-        // A. 근접 검기 공격 충돌
+        // A. 근접 공격
         if (player.isAttacking) {
             let meleeBox = {
-                x: player.direction === "right" ? player.x + player.width : player.x - 65,
-                y: player.y + 10, width: 65, height: 45
+                x: player.direction === "right" ? player.x + player.width : player.x - 70,
+                y: player.y + 10, width: 70, height: 45
             };
             if (isColliding(meleeBox, monster)) {
                 monster.takeDamage(player.attackPower);
@@ -521,49 +570,42 @@ function gameLoop() {
             }
         }
 
-        // B. 샷건 투사체 충돌 (산탄 개별 타격 판정)
+        // B. 샷건 투사체
         projectiles.forEach(proj => {
             if (proj.alive && isColliding(proj, monster)) {
                 monster.takeDamage(proj.power);
                 proj.alive = false; 
-                createExplosion(proj.x, proj.y, "#00ffff", 5); 
+                createExplosion(proj.x, proj.y, "#22d3ee", 4); 
             }
         });
 
-        // C. 바디 터치 피격
+        // C. 피격 체킹
         if (isColliding(player, monster)) {
             player.takeDamage(monster.damage, monster.x);
         }
     });
 
-    // 소멸된 투사체 여과 파괴
-    for(let i=projectiles.length-1; i>=0; i--) {
-        if(!projectiles[i].alive) projectiles.splice(i,1);
-    }
+    for(let i=projectiles.length-1; i>=0; i--) { if(!projectiles[i].alive) projectiles.splice(i,1); }
 
-    // 엔티티 그래픽 플러시 렌더링
     player.draw();
     projectiles.forEach(p => p.draw());
     monsters.forEach(m => m.draw());
 
-    // 파티클 루프
     for (let i = particles.length - 1; i >= 0; i--) {
         particles[i].update(); particles[i].draw();
         if (particles[i].alpha <= 0) particles.splice(i, 1);
     }
-    // 데미지 스킨 루프
     for (let i = damageTexts.length - 1; i >= 0; i--) {
         damageTexts[i].update(); damageTexts[i].draw();
         if (damageTexts[i].alpha <= 0) damageTexts.splice(i, 1);
     }
 
-    ctx.restore(); // 화면 떨림 캔버스 원상복구
+    ctx.restore(); 
 
-    updateCooldownUI(); // 실시간 쿨타임 글자 변경
+    updateCooldownUI(); 
     requestAnimationFrame(gameLoop);
 }
 
-// 게임 최초 가동
 updateUI();
 gameLoop();
 </script>

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>무한 서바이벌 RPG 게임</title>
+    <title>무한 샷건 서바이벌 RPG</title>
     <style>
         * { box-sizing: border-box; }
         body { 
@@ -44,8 +44,14 @@
             background-color: #e74c3c;
             transition: width 0.1s ease;
         }
+        .cooldown-container {
+            font-size: 14px;
+            color: #00ffff;
+            display: flex;
+            align-items: center;
+        }
         canvas { 
-            background: #111a24; 
+            background: #0f171e; 
             border: 4px solid #444; 
             box-shadow: 0 10px 30px rgba(0,0,0,0.9); 
         }
@@ -65,26 +71,28 @@
     <div>레벨: <span id="lvl" style="color:#f1c40f">1</span></div>
     <div>경험치: <span id="exp">0</span>/100</div>
     <div>골드: <span id="gold" style="color:#f39c12">0</span> G</div>
+    <div class="cooldown-container">샷건 재장전: <span id="cd-txt" style="font-weight:bold;">READY</span></div>
 </div>
 
 <canvas id="gameCanvas" width="800" height="450"></canvas>
 
 <div class="controls">
-    <strong>[A, D]</strong> 좌우 이동 | <strong>[W]</strong> 점프 | <strong>[K]</strong> 근접 공격 | <strong>[L]</strong> 원거리 파티클 발사<br>
-    <span style="color:#00ffff">⚡ 무한 맵 시스템: 앞으로 나아갈수록 지형과 5종의 몹이 랜덤 생성되며, 지나온 과거의 맵은 메모리 최적화를 위해 실시간으로 삭제됩니다!</span>
+    <strong>[A, D]</strong> 좌우 이동 | <strong>[W]</strong> 점프 | <strong>[K]</strong> 근접 공격 | <strong>[L]</strong> <span style="color:#00ffff; font-weight:bold;">대형 마법 샷건 발사 (쿨타임 길음)</span><br>
+    <span style="color:#ff7675">🔥 타격 쾌감: 샷건 발사 및 강력한 몹 타격 시 화면이 다이내믹하게 흔들립니다! 앞으로 전진해 보세요.</span>
 </div>
 
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-// 🌍 글로벌 게임 설정 (무한 가로 맵)
+// 🌍 글로벌 게임 설정
 const GRAVITY = 0.6;
 const GROUND_Y = 380;
 
 const keys = {};
 let cameraX = 0;
-let lastGeneratedX = 800; // 맵 생성 동적 기준점
+let lastGeneratedX = 800; 
+let shakeTime = 0; // 🎥 화면 흔들림 프레임 수 변수
 
 // 엔티티 관리 배열
 let platforms = [
@@ -92,7 +100,7 @@ let platforms = [
     { x: 580, y: 200, width: 160, height: 15 }
 ];
 let monsters = [];
-const projectiles = []; // 플레이어 원거리 투사체 배열
+const projectiles = []; 
 const damageTexts = []; 
 const particles = []; 
 
@@ -121,35 +129,40 @@ function createExplosion(x, y, color, count = 12) {
     for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color));
 }
 
-// 🔮 2. 플레이어 원거리 투사체(파티클 슛) 클래스
+// 🔮 2. 샷건 투사체 클래스 (퍼져나갈 수 있도록 vy 속성 추가)
 class Projectile {
-    constructor(x, y, direction, power) {
+    constructor(x, y, vx, vy, power) {
         this.x = x;
         this.y = y;
-        this.width = 12;
-        this.height = 12;
-        this.vx = direction === "right" ? 11 : -11; // 비행 속도
+        this.width = 10;
+        this.height = 10;
+        this.vx = vx; // X축 속도
+        this.vy = vy; // Y축 퍼짐 속도
         this.power = power;
         this.alive = true;
-        this.color = "#00ffff"; // 시안색 마법 구체
+        this.color = "#00ffff"; 
     }
     update() {
         this.x += this.vx;
-        // 날아가면서 뒤에 잔상 파티클 생성
-        if (Math.random() > 0.4) {
-            particles.push(new Particle(this.x, this.y + 6, "rgba(0, 255, 255, 0.4)"));
+        this.y += this.vy; // 부채꼴로 퍼지게 만듦
+
+        // 날아가면서 마법 잔상 파티클 생성
+        if (Math.random() > 0.3) {
+            particles.push(new Particle(this.x, this.y, "rgba(0, 255, 255, 0.3)"));
         }
-        // 화면 바깥으로 멀리 벗어나면 자동 소멸
-        if (this.x < cameraX - 100 || this.x > cameraX + 900) this.alive = false;
+        // 화면 범위를 크게 벗어나면 삭제
+        if (this.x < cameraX - 100 || this.x > cameraX + 900 || this.y < 0 || this.y > 450) {
+            this.alive = false;
+        }
     }
     draw() {
         ctx.save();
         ctx.translate(-cameraX, 0);
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 10;
         ctx.shadowColor = this.color;
         ctx.fillStyle = this.color;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, 6, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, 5, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
     }
@@ -166,15 +179,16 @@ class Player {
         
         this.isAttacking = false;
         this.attackCooldown = 0;
-        this.rangedCooldown = 0; // 원거리 쿨타임
+        this.rangedCooldown = 0; // 샷건 쿨타임 변수
+        this.maxRangedCooldown = 90; // 90프레임 = 약 1.5초의 긴 쿨타임
         this.direction = "right"; 
         this.invincibleFrames = 0;
         
         // 스탯
         this.maxHp = 100; this.hp = 100;
         this.level = 1; this.exp = 0; this.gold = 0;
-        this.attackPower = 25; // 근접 데ice
-        this.magicPower = 15;  // 원거리 데미지
+        this.attackPower = 25; 
+        this.magicPower = 18;  // 탄 한 발당 데미지
     }
 
     update() {
@@ -202,11 +216,23 @@ class Player {
         }
         if (this.attackCooldown < 10) this.isAttacking = false;
 
-        // 🌟 L 키 원거리 파티클 슈팅 로직
+        // 🌟 샷건 다량 발사 로직 (L키 클릭)
         if (keys['KeyL'] && this.rangedCooldown === 0) {
             let shootX = this.direction === "right" ? this.x + this.width : this.x;
-            projectiles.push(new Projectile(shootX, this.y + this.height / 2 - 5, this.direction, this.magicPower));
-            this.rangedCooldown = 15; // 연사 속도 제한 (15프레임 쿨타임)
+            let shootY = this.y + this.height / 2 - 5;
+            let baseVx = this.direction === "right" ? 12 : -12;
+
+            // 총 5발의 탄환을 상하 각도를 다르게(vy 값을 다르게) 주어 샷건처럼 방출
+            // vy값 종류: -4, -2, 0, 2, 4 (부채꼴 확산형)
+            for (let i = -2; i <= 2; i++) {
+                projectiles.push(new Projectile(shootX, shootY, baseVx, i * 2, this.magicPower));
+            }
+
+            // 발사 이펙트 파티클 대량 생성
+            createExplosion(shootX, shootY, "#00ffff", 15);
+
+            this.rangedCooldown = this.maxRangedCooldown; // 긴 쿨타임 적용
+            shakeTime = 14; // 💥 샷건 반동으로 화면 강하게 흔들기!
         }
 
         // 물리 엔진 연산
@@ -227,9 +253,9 @@ class Player {
             }
         });
 
-        // 🎥 카메라 추적 및 빽도 차단 (지나온 왼쪽 화면 밖으로 못 나가게 제한)
+        // 카메라 추적 및 빽도 차단 (화면 왼쪽 한계선 가두기)
         if (this.x > 350) cameraX = this.x - 350;
-        if (this.x < cameraX) this.x = cameraX; // 지나온 맵이 삭제되므로 투명 벽 생성
+        if (this.x < cameraX) this.x = cameraX; 
     }
 
     draw() {
@@ -243,7 +269,7 @@ class Player {
         
         ctx.beginPath(); ctx.roundRect(this.x, this.y, this.width, this.height, 8); ctx.fill();
 
-        // 캐릭터 시선 눈동자
+        // 캐릭터 눈동자
         ctx.shadowBlur = 0; ctx.fillStyle = "#fff";
         let eyeX = this.direction === "right" ? this.x + this.width - 14 : this.x + 6;
         ctx.fillRect(eyeX, this.y + 16, 8, 8);
@@ -265,6 +291,7 @@ class Player {
         this.invincibleFrames = 30; this.vy = -5; 
         this.vx = this.x < monsterX ? -6 : 6; 
         createExplosion(this.x + this.width/2, this.y + this.height/2, "#e74c3c", 8);
+        shakeTime = 10; // 피격 시 화면 끄덕임 효과
         updateUI();
 
         if (this.hp <= 0) {
@@ -277,7 +304,7 @@ class Player {
     gainExp(amount) {
         this.exp += amount;
         if (this.exp >= 100) {
-            this.level++; this.exp -= 100; this.maxHp += 15; this.hp = this.maxHp; this.attackPower += 4; this.magicPower += 3;
+            this.level++; this.exp -= 100; this.maxHp += 15; this.hp = this.maxHp; this.attackPower += 4; this.magicPower += 2;
             createDamageText("LEVEL UP!", this.x + this.width/2, this.y - 20, "#f1c40f");
             createExplosion(this.x + this.width/2, this.y + this.height/2, "#f1c40f", 20);
         }
@@ -285,35 +312,33 @@ class Player {
     }
 }
 
-// 👾 4. 확장된 5종의 다채로운 몬스터 클래스
+// 👾 4. 5종의 다채로운 몬스터 클래스
 class Monster {
     constructor(x, y, type = 'normal') {
         this.x = x; this.alive = true; this.type = type; this.startX = x;
 
-        // 🌟 다채로운 5개 몬스터 스펙 세팅
         switch(type) {
-            case 'fast': // 1. 스피드 크리처 (작고 매우 빠름)
-                this.width = 35; this.height = 35; this.maxHp = 30; this.vx = -3.2; this.damage = 8;
+            case 'fast': 
+                this.width = 35; this.height = 35; this.maxHp = 25; this.vx = -3.2; this.damage = 8;
                 this.colorStart = "#1abc9c"; this.colorEnd = "#117a65"; this.shadowColor = "#1abc9c";
                 break;
-            case 'tank': // 2. 골렘 대형 몬스터 (크고 단단하며 강력함)
-                this.width = 55; this.height = 65; this.maxHp = 110; this.vx = -1.0; this.damage = 25;
+            case 'tank': 
+                this.width = 55; this.height = 65; this.maxHp = 120; this.vx = -1.0; this.damage = 25;
                 this.colorStart = "#e67e22"; this.colorEnd = "#935116"; this.shadowColor = "#e67e22";
                 break;
-            case 'ghost': // 3. 공중 유령 (공중에 부유하며 발판 지형 무시 패트롤)
+            case 'ghost': 
                 this.width = 38; this.height = 42; this.maxHp = 45; this.vx = -1.6; this.damage = 12;
-                this.colorStart = "#34495e"; this.colorEnd = "#2c3e50"; this.shadowColor = "#9b59b6";
+                this.colorStart = "#e84393"; this.colorEnd = "#a29bfe"; this.shadowColor = "#fd79a8";
                 break;
-            case 'boss': // 4. 무한 대형 보스 (일정 확률 등장 극악 몬스터)
-                this.width = 70; this.height = 85; this.maxHp = 300; this.vx = -0.8; this.damage = 35;
+            case 'boss': 
+                this.width = 70; this.height = 85; this.maxHp = 350; this.vx = -0.7; this.damage = 35;
                 this.colorStart = "#9b59b6"; this.colorEnd = "#4a235a"; this.shadowColor = "#e74c3c";
                 break;
-            default: // 5. 일반 슬라임형 ('normal')
-                this.width = 40; this.height = 45; this.maxHp = 50; this.vx = -1.8; this.damage = 14;
+            default: 
+                this.width = 40; this.height = 45; this.maxHp = 55; this.vx = -1.8; this.damage = 14;
                 this.colorStart = "#2ecc71"; this.colorEnd = "#196f3d"; this.shadowColor = "#2ecc71";
         }
         
-        // 하늘 몹 고도 보정
         this.y = type === 'ghost' ? y - 130 : y - this.height;
         this.hp = this.maxHp;
     }
@@ -336,7 +361,7 @@ class Monster {
 
         ctx.beginPath(); ctx.roundRect(this.x, this.y, this.width, this.height, 6); ctx.fill();
 
-        // 몹 체력바
+        // 체력바
         ctx.shadowBlur = 0; ctx.fillStyle = "#333"; ctx.fillRect(this.x, this.y - 12, this.width, 6);
         ctx.fillStyle = "#e74c3c"; ctx.fillRect(this.x, this.y - 12, this.width * (this.hp / this.maxHp), 6);
 
@@ -346,18 +371,21 @@ class Monster {
     takeDamage(amount) {
         this.hp -= amount;
         createDamageText(`-${amount}`, this.x + this.width / 2, this.y - 10, this.type === 'boss' ? "#ffeb3b" : "#ff7675");
-        createExplosion(this.x + this.width/2, this.y + this.height/2, this.shadowColor, 12);
+        createExplosion(this.x + this.width/2, this.y + this.height/2, this.shadowColor, 10);
+
+        // 탱크나 보스를 때리면 묵직한 타격감 진동 효과 발생
+        if (this.type === 'boss' || this.type === 'tank') shakeTime = 6;
 
         if (this.hp <= 0) {
             this.alive = false;
-            let goldReward = this.type === 'boss' ? 150 : (this.type === 'tank' ? 50 : 20);
-            let expReward = this.type === 'boss' ? 120 : (this.type === 'tank' ? 45 : 30);
+            let goldReward = this.type === 'boss' ? 200 : (this.type === 'tank' ? 60 : 25);
+            let expReward = this.type === 'boss' ? 150 : (this.type === 'tank' ? 50 : 30);
             player.gold += goldReward; player.gainExp(expReward);
         }
     }
 }
 
-// ✍️ 5. 텍스트 출력 클래스
+// ✍️ 5. 텍스트 클래스
 class DamageText {
     constructor(text, x, y, color) {
         this.text = text; this.x = x; this.y = y; this.color = color;
@@ -375,11 +403,10 @@ function createDamageText(text, x, y, color) { damageTexts.push(new DamageText(t
 
 // 🔄 6. 실시간 무한 절차적 맵 생성 및 클리닝 알고리즘
 function handleInfiniteWorld() {
-    // 플레이어가 오른쪽으로 전진하면 카메라 앞에 지형과 몹 실시간 무한 루프 생성
     if (player.x + 900 > lastGeneratedX) {
-        lastGeneratedX += Math.random() * 250 + 220; // 스폰 거리 누적 계산
+        lastGeneratedX += Math.random() * 250 + 220; 
 
-        // A. 확률형 공중 발판 배치 생성
+        // 확률형 공중 발판 생성
         if (Math.random() > 0.3) {
             platforms.push({
                 x: lastGeneratedX,
@@ -389,22 +416,21 @@ function handleInfiniteWorld() {
             });
         }
 
-        // B. 5개 종류의 몬스터 타입 랜덤 믹스업 선정
+        // 5개 종류의 몬스터 확률 배정 스폰
         let mobPool = ['normal', 'fast', 'tank', 'ghost'];
-        if (Math.random() > 0.88) mobPool.push('boss'); // 12% 보스 기습 출현
+        if (Math.random() > 0.85) mobPool.push('boss'); // 15% 보스 기습 출현
         let rolledType = mobPool[Math.floor(Math.random() * mobPool.length)];
 
         monsters.push(new Monster(lastGeneratedX, GROUND_Y, rolledType));
     }
 
-    // 🗑️ [지나온 맵 지우기 최적화] 화면 왼쪽 뒤(cameraX - 300)로 완전히 사라진 것들은 완전 파괴 삭제
+    // 지나온 과거의 맵 오브젝트 완전 소멸 삭제 (최적화)
     let purgeLimit = cameraX - 300;
     platforms = platforms.filter(p => p.x + p.width > purgeLimit);
     monsters = monsters.filter(m => m.alive && m.x + m.width > purgeLimit); 
-    // 죽은 몹 및 지나쳐서 영영 안 볼 몹들 전부 배열에서 완벽 여과 제거(메모리 보존)
 }
 
-// 초기 UI 바인딩
+// UI 쿨타임 업데이트 및 출력 연동
 const player = new Player();
 function updateUI() {
     document.getElementById("lvl").innerText = player.level;
@@ -412,6 +438,19 @@ function updateUI() {
     document.getElementById("gold").innerText = player.gold;
     document.getElementById("hp-txt").innerText = `${player.hp}/${player.maxHp}`;
     document.getElementById("hp-fill").style.width = (player.hp / player.maxHp) * 100 + "%";
+}
+
+// 매 프레임마다 UI상의 쿨타임 글자 업데이트
+function updateCooldownUI() {
+    const cdTxt = document.getElementById("cd-txt");
+    if (player.rangedCooldown > 0) {
+        let secondsLeft = (player.rangedCooldown / 60).toFixed(1);
+        cdTxt.innerText = `${secondsLeft}초`;
+        cdTxt.style.color = "#ff7675";
+    } else {
+        cdTxt.innerText = "READY";
+        cdTxt.style.color = "#00ffff";
+    }
 }
 
 window.addEventListener('keydown', e => keys[e.code] = true);
@@ -424,38 +463,49 @@ function isColliding(rect1, rect2) {
            rect1.y + rect1.height > rect2.y;
 }
 
-// 🔄 7. 최종 메인 게임 루프 엔진 작동
+// 🔄 7. 최종 메인 게임 루프 엔진
 function gameLoop() {
+    // 🎥 [화면 흔들림 연출 시스템 구현]
+    let offsetX = 0;
+    let offsetY = 0;
+    if (shakeTime > 0) {
+        offsetX = (Math.random() - 0.5) * 10; // 무작위 진동 범위 값 계산
+        offsetY = (Math.random() - 0.5) * 10;
+        shakeTime--;
+    }
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // [무한 월드 실시간 자동 처리 연동]
+    ctx.save();
+    ctx.translate(offsetX, offsetY); // 화면 흔들림 오프셋 전체 적용
+
     handleInfiniteWorld();
 
-    // [풍경 드로잉 - 패럴랙스 카메라 연산]
+    // 배경 드로잉 - 패럴랙스 카메라
     ctx.save(); ctx.translate(-cameraX * 0.2, 0); ctx.strokeStyle = "#1b2631"; ctx.lineWidth = 2;
     for(let i = Math.floor(cameraX*0.2/200)*200; i < cameraX*0.2 + 1200; i+=200) {
         ctx.strokeRect(i, 160, 110, 220);
     }
     ctx.restore();
 
-    // [공중 발판 렌더]
+    // 공중 발판 렌더
     ctx.save(); ctx.translate(-cameraX, 0); ctx.fillStyle = "#d35400";
     ctx.shadowBlur = 6; ctx.shadowColor = "#d35400";
     platforms.forEach(p => { ctx.beginPath(); ctx.roundRect(p.x, p.y, p.width, p.height, 4); ctx.fill(); });
     ctx.restore();
 
-    // [지하 땅바닥 렌더]
+    // 지하 땅바닥 렌더
     ctx.save(); ctx.translate(-cameraX, 0); ctx.fillStyle = "#2c3e50";
     ctx.fillRect(cameraX - 100, GROUND_Y, 1000, canvas.height - GROUND_Y);
-    ctx.fillStyle = "#00ffcc"; ctx.fillRect(cameraX - 100, GROUND_Y, 1000, 5); // 충전 네온 띠 효과
+    ctx.fillStyle = "#00ffcc"; ctx.fillRect(cameraX - 100, GROUND_Y, 1000, 5); 
     ctx.restore();
 
-    // [엔티티 업데이트]
+    // 엔티티 업데이트
     player.update();
     projectiles.forEach(p => p.update());
     monsters.forEach(m => m.update());
 
-    // [실시간 크로스오버 충돌 감지 로직]
+    // 충돌 체킹 검사
     monsters.forEach(monster => {
         if (!monster.alive) return;
 
@@ -471,46 +521,49 @@ function gameLoop() {
             }
         }
 
-        // B. 원거리 투사체 파티클 충돌 체킹
+        // B. 샷건 투사체 충돌 (산탄 개별 타격 판정)
         projectiles.forEach(proj => {
             if (proj.alive && isColliding(proj, monster)) {
                 monster.takeDamage(proj.power);
-                proj.alive = false; // 투사체 파괴
-                createExplosion(proj.x, proj.y, "#00ffff", 6); // 원거리 전용 마법 타격 이펙트
+                proj.alive = false; 
+                createExplosion(proj.x, proj.y, "#00ffff", 5); 
             }
         });
 
-        // C. 바디 터치 피격 충돌
+        // C. 바디 터치 피격
         if (isColliding(player, monster)) {
             player.takeDamage(monster.damage, monster.x);
         }
     });
 
-    // 사용이 끝난 원거리 구체 배열 필터 여과
+    // 소멸된 투사체 여과 파괴
     for(let i=projectiles.length-1; i>=0; i--) {
         if(!projectiles[i].alive) projectiles.splice(i,1);
     }
 
-    // [드로잉 그래픽 플러시]
+    // 엔티티 그래픽 플러시 렌더링
     player.draw();
     projectiles.forEach(p => p.draw());
     monsters.forEach(m => m.draw());
 
-    // 흩날리는 파티클 루프
+    // 파티클 루프
     for (let i = particles.length - 1; i >= 0; i--) {
         particles[i].update(); particles[i].draw();
         if (particles[i].alpha <= 0) particles.splice(i, 1);
     }
-    // 데미지 스킨 텍스트 루프
+    // 데미지 스킨 루프
     for (let i = damageTexts.length - 1; i >= 0; i--) {
         damageTexts[i].update(); damageTexts[i].draw();
         if (damageTexts[i].alpha <= 0) damageTexts.splice(i, 1);
     }
 
+    ctx.restore(); // 화면 떨림 캔버스 원상복구
+
+    updateCooldownUI(); // 실시간 쿨타임 글자 변경
     requestAnimationFrame(gameLoop);
 }
 
-// 엔진 가동 시작
+// 게임 최초 가동
 updateUI();
 gameLoop();
 </script>
